@@ -180,11 +180,17 @@ pub fn main() !void {
             state.filename = arg;
 
             const file = fs.cwd().openFile(state.filename, .{ .mode = .read_write }) catch |open_err| {
-                if (open_err == error.FileNotFound) {
-                    std.debug.print("No such file: {s}\n", .{state.filename});
-                    return;
+                switch (open_err) {
+                    error.FileNotFound => {
+                        std.debug.print("No such file: {s}\n", .{state.filename});
+                        return;
+                    },
+                    error.FileBusy => {
+                        std.debug.print("File is busy: {s}\n", .{state.filename});
+                        return;
+                    },
+                    else => return open_err,
                 }
-                return open_err;
             };
 
             defer file.close();
