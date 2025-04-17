@@ -178,7 +178,15 @@ pub fn main() !void {
             return error.InvalidArgument;
         } else {
             state.filename = arg;
-            const file = try fs.cwd().openFile(state.filename, .{ .mode = .read_write });
+
+            const file = fs.cwd().openFile(state.filename, .{ .mode = .read_write }) catch |open_err| {
+                if (open_err == error.FileNotFound) {
+                    std.debug.print("No such file: {s}\n", .{state.filename});
+                    return;
+                }
+                return open_err;
+            };
+
             defer file.close();
             state.file = file;
 
