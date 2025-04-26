@@ -1,0 +1,35 @@
+name: zstrip-linux-x64-musl
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: 'true'
+
+      - name: Install zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Build
+        run: zig build
+
+      - name: Strip artifact
+        run: |
+          cp ./zig-out/bin/zstrip ./zig-out/bin/zstrip2
+          ./zig-out/bin/zstrip2 ./zig-out/bin/zstrip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zstrip-linux-x64
+          path: zig-out/bin/zstrip
