@@ -4,11 +4,21 @@ zstrip is a small utility that removes as much as possible from an ELF file with
 
 This is a direct port of `super-strip` and `lib-elfrw` from [Muppetlabs' ELF kickers collection](https://www.muppetlabs.com/~breadbox/software/elfkickers.html) to Zig, maintaining all original functionality and compatibility with the original `sstrip version 2.1`.
 
+## Usage
+
+1. Download latest release binary [from here](https://github.com/valters-tomsons/zuper-strip/releases)
+1. Extract the downloaded archive
+2. `./zstrip --help`
+
+* Provided binaries are statically linked against musl-libc, so they should work on any Linux distribution with kernel version [2.6.39 or newer](https://wiki.musl-libc.org/supported-platforms.html).
+* *Should* work with both 32-bit and 64-bit ELF binaries, regardless of host architecture.
+* Only x86_64 binaries are provided, feel free to change `build.zig` to build for other architectures (see [Building](#building) section).
+
 ## Building
 
 1. Install zig `0.13.0`
 2. Run `zig build`
-3. `./zig-out/bin/zstrip`
+3. `./zig-out/bin/zstrip --help`
 
 ## Explanation
 
