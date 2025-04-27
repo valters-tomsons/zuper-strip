@@ -105,83 +105,34 @@ pub const ElfState = struct {
     is_little_endian: bool = true,
 };
 
-fn read_u16(reader: anytype, is_little_endian: bool) !u16 {
-    const bytes = try reader.readBytesNoEof(2);
+fn read_bytes(reader: anytype, comptime T: type, is_little_endian: bool) !T {
+    const bytes = try reader.readBytesNoEof(@sizeOf(T));
+    var result: T = 0;
+
     if (is_little_endian) {
-        return @as(u16, bytes[0]) | (@as(u16, bytes[1]) << 8);
+        inline for (bytes, 0..) |byte, i| {
+            result |= @as(T, byte) << @intCast(i * 8);
+        }
     } else {
-        return (@as(u16, bytes[0]) << 8) | @as(u16, bytes[1]);
+        inline for (bytes, 0..) |byte, i| {
+            result |= @as(T, byte) << @intCast((@sizeOf(T) - 1 - i) * 8);
+        }
     }
+    return result;
 }
 
-fn read_u32(reader: anytype, is_little_endian: bool) !u32 {
-    const bytes = try reader.readBytesNoEof(4);
-    if (is_little_endian) {
-        return @as(u32, bytes[0]) | (@as(u32, bytes[1]) << 8) | (@as(u32, bytes[2]) << 16) | (@as(u32, bytes[3]) << 24);
-    } else {
-        return (@as(u32, bytes[0]) << 24) | (@as(u32, bytes[1]) << 16) | (@as(u32, bytes[2]) << 8) | @as(u32, bytes[3]);
-    }
-}
+fn write_bytes(writer: anytype, value: anytype, is_little_endian: bool) !void {
+    const T = @TypeOf(value);
+    var bytes: [@sizeOf(T)]u8 = undefined;
 
-fn read_u64(reader: anytype, is_little_endian: bool) !u64 {
-    const bytes = try reader.readBytesNoEof(8);
     if (is_little_endian) {
-        return @as(u64, bytes[0]) | (@as(u64, bytes[1]) << 8) | (@as(u64, bytes[2]) << 16) | (@as(u64, bytes[3]) << 24) |
-            (@as(u64, bytes[4]) << 32) | (@as(u64, bytes[5]) << 40) | (@as(u64, bytes[6]) << 48) | (@as(u64, bytes[7]) << 56);
+        inline for (&bytes, 0..) |*byte, i| {
+            byte.* = @truncate(value >> @intCast(i * 8));
+        }
     } else {
-        return (@as(u64, bytes[0]) << 56) | (@as(u64, bytes[1]) << 48) | (@as(u64, bytes[2]) << 40) | (@as(u64, bytes[3]) << 32) |
-            (@as(u64, bytes[4]) << 24) | (@as(u64, bytes[5]) << 16) | (@as(u64, bytes[6]) << 8) | @as(u64, bytes[7]);
-    }
-}
-
-fn write_u16(writer: anytype, value: u16, is_little_endian: bool) !void {
-    var bytes: [2]u8 = undefined;
-    if (is_little_endian) {
-        bytes[0] = @truncate(value);
-        bytes[1] = @truncate(value >> 8);
-    } else {
-        bytes[0] = @truncate(value >> 8);
-        bytes[1] = @truncate(value);
-    }
-    try writer.writeAll(&bytes);
-}
-
-fn write_u32(writer: anytype, value: u32, is_little_endian: bool) !void {
-    var bytes: [4]u8 = undefined;
-    if (is_little_endian) {
-        bytes[0] = @truncate(value);
-        bytes[1] = @truncate(value >> 8);
-        bytes[2] = @truncate(value >> 16);
-        bytes[3] = @truncate(value >> 24);
-    } else {
-        bytes[0] = @truncate(value >> 24);
-        bytes[1] = @truncate(value >> 16);
-        bytes[2] = @truncate(value >> 8);
-        bytes[3] = @truncate(value);
-    }
-    try writer.writeAll(&bytes);
-}
-
-fn write_u64(writer: anytype, value: u64, is_little_endian: bool) !void {
-    var bytes: [8]u8 = undefined;
-    if (is_little_endian) {
-        bytes[0] = @truncate(value);
-        bytes[1] = @truncate(value >> 8);
-        bytes[2] = @truncate(value >> 16);
-        bytes[3] = @truncate(value >> 24);
-        bytes[4] = @truncate(value >> 32);
-        bytes[5] = @truncate(value >> 40);
-        bytes[6] = @truncate(value >> 48);
-        bytes[7] = @truncate(value >> 56);
-    } else {
-        bytes[0] = @truncate(value >> 56);
-        bytes[1] = @truncate(value >> 48);
-        bytes[2] = @truncate(value >> 40);
-        bytes[3] = @truncate(value >> 32);
-        bytes[4] = @truncate(value >> 24);
-        bytes[5] = @truncate(value >> 16);
-        bytes[6] = @truncate(value >> 8);
-        bytes[7] = @truncate(value);
+        inline for (&bytes, 0..) |*byte, i| {
+            byte.* = @truncate(value >> @intCast((@sizeOf(T) - 1 - i) * 8));
+        }
     }
     try writer.writeAll(&bytes);
 }
@@ -200,54 +151,54 @@ pub fn read_elf_header(reader: anytype, state: *ElfState) !Elf64_Ehdr {
     var ehdr: Elf64_Ehdr = undefined;
     @memcpy(ehdr.e_ident[0..], &ident);
 
-    ehdr.e_type = try read_u16(reader, state.is_little_endian);
-    ehdr.e_machine = try read_u16(reader, state.is_little_endian);
-    ehdr.e_version = try read_u32(reader, state.is_little_endian);
+    ehdr.e_type = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_machine = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_version = try read_bytes(reader, Elf64_Word, state.is_little_endian);
 
     if (state.is_64bit) {
-        ehdr.e_entry = try read_u64(reader, state.is_little_endian);
-        ehdr.e_phoff = try read_u64(reader, state.is_little_endian);
-        ehdr.e_shoff = try read_u64(reader, state.is_little_endian);
+        ehdr.e_entry = try read_bytes(reader, Elf64_Addr, state.is_little_endian);
+        ehdr.e_phoff = try read_bytes(reader, Elf64_Off, state.is_little_endian);
+        ehdr.e_shoff = try read_bytes(reader, Elf64_Off, state.is_little_endian);
     } else {
-        ehdr.e_entry = try read_u32(reader, state.is_little_endian);
-        ehdr.e_phoff = try read_u32(reader, state.is_little_endian);
-        ehdr.e_shoff = try read_u32(reader, state.is_little_endian);
+        ehdr.e_entry = try read_bytes(reader, Elf32_Addr, state.is_little_endian);
+        ehdr.e_phoff = try read_bytes(reader, Elf32_Off, state.is_little_endian);
+        ehdr.e_shoff = try read_bytes(reader, Elf32_Off, state.is_little_endian);
     }
 
-    ehdr.e_flags = try read_u32(reader, state.is_little_endian);
-    ehdr.e_ehsize = try read_u16(reader, state.is_little_endian);
-    ehdr.e_phentsize = try read_u16(reader, state.is_little_endian);
-    ehdr.e_phnum = try read_u16(reader, state.is_little_endian);
-    ehdr.e_shentsize = try read_u16(reader, state.is_little_endian);
-    ehdr.e_shnum = try read_u16(reader, state.is_little_endian);
-    ehdr.e_shstrndx = try read_u16(reader, state.is_little_endian);
+    ehdr.e_flags = try read_bytes(reader, Elf64_Word, state.is_little_endian);
+    ehdr.e_ehsize = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_phentsize = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_phnum = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_shentsize = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_shnum = try read_bytes(reader, Elf64_Half, state.is_little_endian);
+    ehdr.e_shstrndx = try read_bytes(reader, Elf64_Half, state.is_little_endian);
 
     return ehdr;
 }
 
 pub fn write_elf_header(writer: anytype, ehdr: *const Elf64_Ehdr, state: *ElfState) !void {
     try writer.writeAll(&ehdr.e_ident);
-    try write_u16(writer, ehdr.e_type, state.is_little_endian);
-    try write_u16(writer, ehdr.e_machine, state.is_little_endian);
-    try write_u32(writer, ehdr.e_version, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_type, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_machine, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_version, state.is_little_endian);
 
     if (state.is_64bit) {
-        try write_u64(writer, ehdr.e_entry, state.is_little_endian);
-        try write_u64(writer, ehdr.e_phoff, state.is_little_endian);
-        try write_u64(writer, ehdr.e_shoff, state.is_little_endian);
+        try write_bytes(writer, ehdr.e_entry, state.is_little_endian);
+        try write_bytes(writer, ehdr.e_phoff, state.is_little_endian);
+        try write_bytes(writer, ehdr.e_shoff, state.is_little_endian);
     } else {
-        try write_u32(writer, @truncate(ehdr.e_entry), state.is_little_endian);
-        try write_u32(writer, @truncate(ehdr.e_phoff), state.is_little_endian);
-        try write_u32(writer, @truncate(ehdr.e_shoff), state.is_little_endian);
+        try write_bytes(writer, @as(Elf32_Addr, @truncate(ehdr.e_entry)), state.is_little_endian);
+        try write_bytes(writer, @as(Elf32_Off, @truncate(ehdr.e_phoff)), state.is_little_endian);
+        try write_bytes(writer, @as(Elf32_Off, @truncate(ehdr.e_shoff)), state.is_little_endian);
     }
 
-    try write_u32(writer, ehdr.e_flags, state.is_little_endian);
-    try write_u16(writer, ehdr.e_ehsize, state.is_little_endian);
-    try write_u16(writer, ehdr.e_phentsize, state.is_little_endian);
-    try write_u16(writer, ehdr.e_phnum, state.is_little_endian);
-    try write_u16(writer, ehdr.e_shentsize, state.is_little_endian);
-    try write_u16(writer, ehdr.e_shnum, state.is_little_endian);
-    try write_u16(writer, ehdr.e_shstrndx, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_flags, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_ehsize, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_phentsize, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_phnum, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_shentsize, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_shnum, state.is_little_endian);
+    try write_bytes(writer, ehdr.e_shstrndx, state.is_little_endian);
 }
 
 pub fn read_program_headers(reader: anytype, phdrs: []Elf64_Phdr, count: u16, state: *ElfState) !void {
@@ -256,46 +207,38 @@ pub fn read_program_headers(reader: anytype, phdrs: []Elf64_Phdr, count: u16, st
     }
 
     for (0..count) |i| {
-        phdrs[i].p_type = try read_u32(reader, state.is_little_endian);
+        phdrs[i].p_type = try read_bytes(reader, Elf64_Word, state.is_little_endian);
+
         if (state.is_64bit) {
-            phdrs[i].p_flags = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_offset = try read_u64(reader, state.is_little_endian);
-            phdrs[i].p_vaddr = try read_u64(reader, state.is_little_endian);
-            phdrs[i].p_paddr = try read_u64(reader, state.is_little_endian);
-            phdrs[i].p_filesz = try read_u64(reader, state.is_little_endian);
-            phdrs[i].p_memsz = try read_u64(reader, state.is_little_endian);
-            phdrs[i].p_align = try read_u64(reader, state.is_little_endian);
+            phdrs[i].p_flags = try read_bytes(reader, Elf64_Word, state.is_little_endian);
+            inline for (.{ "p_offset", "p_vaddr", "p_paddr", "p_filesz", "p_memsz", "p_align" }) |field| {
+                @field(phdrs[i], field) = try read_bytes(reader, Elf64_Xword, state.is_little_endian);
+            }
         } else {
-            phdrs[i].p_offset = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_vaddr = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_paddr = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_filesz = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_memsz = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_flags = try read_u32(reader, state.is_little_endian);
-            phdrs[i].p_align = try read_u32(reader, state.is_little_endian);
+            inline for (.{ "p_offset", "p_vaddr", "p_paddr", "p_filesz", "p_memsz" }) |field| {
+                @field(phdrs[i], field) = try read_bytes(reader, Elf32_Word, state.is_little_endian);
+            }
+            phdrs[i].p_flags = try read_bytes(reader, Elf32_Word, state.is_little_endian);
+            phdrs[i].p_align = try read_bytes(reader, Elf32_Word, state.is_little_endian);
         }
     }
 }
 
 pub fn write_program_headers(writer: anytype, phdrs: []const Elf64_Phdr, state: *ElfState) !void {
     for (phdrs) |phdr| {
-        try write_u32(writer, phdr.p_type, state.is_little_endian);
+        try write_bytes(writer, phdr.p_type, state.is_little_endian);
+
         if (state.is_64bit) {
-            try write_u32(writer, phdr.p_flags, state.is_little_endian);
-            try write_u64(writer, phdr.p_offset, state.is_little_endian);
-            try write_u64(writer, phdr.p_vaddr, state.is_little_endian);
-            try write_u64(writer, phdr.p_paddr, state.is_little_endian);
-            try write_u64(writer, phdr.p_filesz, state.is_little_endian);
-            try write_u64(writer, phdr.p_memsz, state.is_little_endian);
-            try write_u64(writer, phdr.p_align, state.is_little_endian);
+            try write_bytes(writer, phdr.p_flags, state.is_little_endian);
+            inline for (.{ "p_offset", "p_vaddr", "p_paddr", "p_filesz", "p_memsz", "p_align" }) |field| {
+                try write_bytes(writer, @field(phdr, field), state.is_little_endian);
+            }
         } else {
-            try write_u32(writer, @truncate(phdr.p_offset), state.is_little_endian);
-            try write_u32(writer, @truncate(phdr.p_vaddr), state.is_little_endian);
-            try write_u32(writer, @truncate(phdr.p_paddr), state.is_little_endian);
-            try write_u32(writer, @truncate(phdr.p_filesz), state.is_little_endian);
-            try write_u32(writer, @truncate(phdr.p_memsz), state.is_little_endian);
-            try write_u32(writer, phdr.p_flags, state.is_little_endian);
-            try write_u32(writer, @truncate(phdr.p_align), state.is_little_endian);
+            inline for (.{ "p_offset", "p_vaddr", "p_paddr", "p_filesz", "p_memsz" }) |field| {
+                try write_bytes(writer, @as(Elf32_Word, @truncate(@field(phdr, field))), state.is_little_endian);
+            }
+            try write_bytes(writer, phdr.p_flags, state.is_little_endian);
+            try write_bytes(writer, @as(Elf32_Word, @truncate(phdr.p_align)), state.is_little_endian);
         }
     }
 }
