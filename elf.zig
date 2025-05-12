@@ -1,5 +1,4 @@
 const std = @import("std");
-const io = std.io;
 const mem = std.mem;
 
 // Common ELF types
